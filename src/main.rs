@@ -1,19 +1,31 @@
 use structopt::StructOpt;
-use words::{read_lines, Excluded, Word};
+use words::{read_lines, Excluded, Word, WordsResult, Included};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let opt = Opt::from_args();
     println!("{:?}", opt);
 
+    let mut result = WordsResult::new(opt.word);
+
+    let excluded = match opt.excluded {
+        Some(e) => e,
+        None => Excluded(vec![])
+    };
+
+    let included = match opt.included {
+        Some(i) => i,
+        None => Included(vec![])
+    };
+
     if let Ok(lines) = read_lines("src/words.txt") {
         for line in lines {
             if let Ok(word) = line {
-                if let Some(output) = opt.word.word_is_matching(&word) {
-                    println!("{:?}", output);
-                }
-            }
+                result.is_word_possible(&word.as_str(), &excluded, &included);
+            };
         }
     };
+
+    println!("{}", result);
 
     Ok(())
 }
@@ -28,4 +40,6 @@ struct Opt {
     word: Word,
     #[structopt(short, long, help = "List of chars you want to omit")]
     excluded: Option<Excluded>,
+    #[structopt(short, long, help = "List of chars you want to include")]
+    included: Option<Included>,
 }

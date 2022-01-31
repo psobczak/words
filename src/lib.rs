@@ -1,4 +1,5 @@
 use std::{
+    fmt::Display,
     fs::File,
     io::{self, BufRead},
     path::Path,
@@ -16,28 +17,109 @@ pub enum WordError {
 }
 
 #[derive(Debug)]
-pub struct Excluded(Vec<char>);
+pub struct Excluded(pub Vec<char>);
+
+#[derive(Debug)]
+pub struct Included(pub Vec<char>);
+
+impl FromStr for Included {
+    type Err = &'static str;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Ok(Included(
+            s.chars().map(|c| char::to_ascii_uppercase(&c)).collect(),
+        ))
+    }
+}
 
 impl FromStr for Excluded {
     type Err = &'static str;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        Ok(Excluded(s.chars().collect()))
+        Ok(Excluded(
+            s.chars().map(|c| char::to_ascii_uppercase(&c)).collect(),
+        ))
+    }
+}
+
+#[derive(Debug, PartialEq)]
+pub struct Word(Vec<Character>);
+
+impl Word {
+    fn new(word: &str) -> Result<Self, WordError> {
+        let output: Word = word.parse()?;
+        Ok(output)
     }
 }
 
 #[derive(Debug)]
-pub struct Word(Vec<Character>);
+pub struct WordsResult {
+    chosen_word: Word,
+    pub possible_words: Vec<Word>,
+}
 
-impl<'a> Word {
-    pub fn word_is_matching(&self, target: &'a str) -> Option<&'a str> {
-        let target_word: Word = target.parse().unwrap();
-        for (self_char, target_char) in self.0.iter().zip(target_word.0.iter()) {
-            if self_char != target_char {
-                return None;
-            }
+impl<'a> WordsResult {
+    pub fn new(chosen_word: Word) -> Self {
+        Self {
+            chosen_word,
+            possible_words: Vec::new(),
         }
-        Some(target)
+    }
+
+    pub fn is_word_possible(
+        &mut self,
+        target: &'a str,
+        excluded: &Excluded,
+        included: &Included,
+    ) -> bool {
+        let target_word: Word = target.parse().unwrap();
+        for (self_char, target_char) in self.chosen_word.0.iter().zip(target_word.0.iter()) {
+            let self_character = match self_char {
+                Character::Normal(c) => c,
+                Character::Wildcard => continue,
+            };
+
+            let target_character = match target_char {
+                Character::Normal(c) => c,
+                _ => &' ',
+            };
+
+            if included.0.contains(target_character) {
+                self.possible_words.push(target_word);
+                return true;
+            }
+
+            if excluded.0.contains(self_character) {
+                return false;
+            };
+
+            if self_char != target_char {
+                return false;
+            };
+        }
+
+        self.possible_words.push(target_word);
+        true
+    }
+}
+
+impl Display for WordsResult {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "List of possible matching words:\n")?;
+        for (i, word) in self.possible_words.iter().enumerate() {
+            let str_word: Vec<&char> = word
+                .0
+                .iter()
+                .map(|c| match c {
+                    Character::Normal(value) => value,
+                    _ => &' ',
+                })
+                .collect();
+
+            write!(f, "{}. {:?}\t\n", i + 1, str_word)?;
+        }
+
+        Ok(())
     }
 }
 
@@ -63,6 +145,19 @@ impl FromStr for Word {
 enum Character {
     Normal(char),
     Wildcard,
+}
+
+impl Display for Character {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{}",
+            match self {
+                Character::Normal(v) => v.to_ascii_uppercase(),
+                _ => ' ',
+            }
+        )
+    }
 }
 
 impl TryFrom<char> for Character {
@@ -113,7 +208,7 @@ mod tests {
 
     #[test]
     fn should_parse_5_char_long_word() {
-        let word = "A?_?c";
+        let word = "A?_*c";
         let actual: Word = word.parse().unwrap();
         assert_eq!(actual.0[0], Character::Normal('A'));
         assert_eq!(actual.0[1], Character::Wildcard);
@@ -124,14 +219,84 @@ mod tests {
 
     #[test]
     fn should_return_matching_word() {
-        let words = vec!["aahed", "aalii", "aargh", "aaron"];
-        let chosen_word: Word = "aargh".parse().unwrap();
+        let excluded = Excluded(vec!['w']);
+        let included = Included(vec![]);
+        let words = vec!["aahed", "aalii", "aargh", "zowie", "zorro"];
+        let chosen_word = Word::new("aargh").unwrap();
+        let mut result = WordsResult::new(chosen_word);
 
-        assert_eq!(chosen_word.word_is_matching(words[0]), None);
-        assert_eq!(chosen_word.word_is_matching(words[1]), None);
-        assert_eq!(chosen_word.word_is_matching(words[2]), Some("aargh"));
-        assert_eq!(chosen_word.word_is_matching(words[3]), None);
+        assert_eq!(result.is_word_possible(words[0], &excluded, &included), false);
+        assert_eq!(result.is_word_possible(words[1], &excluded, &included), false);
+        assert_eq!(result.is_word_possible(words[2], &excluded, &included), true);
+        assert_eq!(result.is_word_possible(words[3], &excluded, &included), false);
+        assert_eq!(result.possible_words.len(), 1);
+        assert_eq!(result.possible_words[0], Word::new("aargh").unwrap());
+    }
 
-        
+    #[test]
+    fn should_return_none_if_word_contains_excluded_char() {
+        let excluded = Excluded(vec!['w']);
+        let included = Included(vec![]);
+        let words = vec!["zowie"];
+        let chosen_word = Word::new("aargh");
+        let mut result = WordsResult::new(chosen_word.unwrap());
+
+        assert_eq!(result.is_word_possible(words[0], &excluded, &included), false);
+        assert_eq!(result.possible_words.len(), 0);
+    }
+
+    #[test]
+    fn should_return_both_words_if_excluded_char_is_wildcard() {
+        let excluded = Excluded(vec!['m']);
+        let included = Included(vec![]);
+        let words = vec!["zorro", "morro"];
+        let chosen_word = Word::new("*orro").unwrap();
+        let mut result = WordsResult::new(chosen_word);
+
+        assert_eq!(result.is_word_possible(words[0], &excluded, &included), true);
+        assert_eq!(result.is_word_possible(words[1], &excluded, &included), true);
+
+        assert_eq!(result.possible_words.len(), 2);
+        assert_eq!(result.possible_words[0], Word::new("zorro").unwrap());
+        assert_eq!(result.possible_words[1], Word::new("morro").unwrap());
+    }
+
+    #[test]
+    fn should_return_word_if_it_matches_completly() {
+        let excluded = Excluded(vec![]);
+        let included = Included(vec![]);
+        let words = vec!["zowie", "aaron"];
+        let chosen_word = Word::new("zowie").unwrap();
+        let mut result = WordsResult::new(chosen_word);
+
+        assert_eq!(result.is_word_possible(words[0], &excluded, &included), true);
+        assert_eq!(result.possible_words.len(), 1);
+        assert_eq!(result.possible_words[0], Word::new("zowie").unwrap());
+    }
+
+    #[test]
+    fn should_return_word_if_it_matches_with_wildcards() {
+        let excluded = Excluded(vec![]);
+        let included = Included(vec![]);
+        let words = vec!["zowie", "aaron"];
+        let chosen_word = Word::new("z?*ie").unwrap();
+        let mut result = WordsResult::new(chosen_word);
+
+        assert_eq!(result.is_word_possible(words[0], &excluded, &included), true);
+        assert_eq!(result.possible_words.len(), 1);
+        assert_eq!(result.possible_words[0], Word::new("zowie").unwrap());
+    }
+
+    #[test]
+    fn should_return_words_containing_included_chars() {
+        let excluded = Excluded(vec![]);
+        let included = Included(vec!['i']);
+        let words = vec!["light", "focus"];
+        let chosen_word = Word::new("*****").unwrap();
+        let mut result = WordsResult::new(chosen_word);
+
+        assert_eq!(result.is_word_possible(words[0], &excluded, &included), true);
+        assert_eq!(result.possible_words.len(), 1);
+        assert_eq!(result.possible_words[0], Word::new("light").unwrap());
     }
 }
