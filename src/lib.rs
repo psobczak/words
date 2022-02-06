@@ -74,20 +74,19 @@ impl<'a> WordsResult {
     ) -> bool {
         let target_word: Word = target.parse().unwrap();
         for (self_char, target_char) in self.chosen_word.0.iter().zip(target_word.0.iter()) {
-            let self_character = match self_char {
-                Character::Normal(c) => c,
-                Character::Wildcard => continue,
-            };
-
             let target_character = match target_char {
                 Character::Normal(c) => c,
                 _ => &' ',
             };
 
             if included.0.contains(target_character) {
-                self.possible_words.push(target_word);
-                return true;
+                break;
             }
+
+            let self_character = match self_char {
+                Character::Normal(c) => c,
+                Character::Wildcard => continue,
+            };
 
             if excluded.0.contains(self_character) {
                 return false;
@@ -105,18 +104,9 @@ impl<'a> WordsResult {
 
 impl Display for WordsResult {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "List of possible matching words:\n")?;
+        write!(f, "List of possible matching words:")?;
         for (i, word) in self.possible_words.iter().enumerate() {
-            let str_word: Vec<&char> = word
-                .0
-                .iter()
-                .map(|c| match c {
-                    Character::Normal(value) => value,
-                    _ => &' ',
-                })
-                .collect();
-
-            write!(f, "{}. {:?}\t\n", i + 1, str_word)?;
+            writeln!(f, "{}. {}\t", i + 1, word)?;
         }
 
         Ok(())
@@ -157,6 +147,17 @@ impl Display for Character {
                 _ => ' ',
             }
         )
+    }
+}
+
+impl Display for Word {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mut word = String::with_capacity(5);
+        for c in self.0.iter() {
+            word.push(char::from_str(&c.to_string()).unwrap())
+        }
+
+        write!(f, "{}", word)
     }
 }
 
@@ -225,10 +226,22 @@ mod tests {
         let chosen_word = Word::new("aargh").unwrap();
         let mut result = WordsResult::new(chosen_word);
 
-        assert_eq!(result.is_word_possible(words[0], &excluded, &included), false);
-        assert_eq!(result.is_word_possible(words[1], &excluded, &included), false);
-        assert_eq!(result.is_word_possible(words[2], &excluded, &included), true);
-        assert_eq!(result.is_word_possible(words[3], &excluded, &included), false);
+        assert_eq!(
+            result.is_word_possible(words[0], &excluded, &included),
+            false
+        );
+        assert_eq!(
+            result.is_word_possible(words[1], &excluded, &included),
+            false
+        );
+        assert_eq!(
+            result.is_word_possible(words[2], &excluded, &included),
+            true
+        );
+        assert_eq!(
+            result.is_word_possible(words[3], &excluded, &included),
+            false
+        );
         assert_eq!(result.possible_words.len(), 1);
         assert_eq!(result.possible_words[0], Word::new("aargh").unwrap());
     }
@@ -241,7 +254,10 @@ mod tests {
         let chosen_word = Word::new("aargh");
         let mut result = WordsResult::new(chosen_word.unwrap());
 
-        assert_eq!(result.is_word_possible(words[0], &excluded, &included), false);
+        assert_eq!(
+            result.is_word_possible(words[0], &excluded, &included),
+            false
+        );
         assert_eq!(result.possible_words.len(), 0);
     }
 
@@ -253,8 +269,14 @@ mod tests {
         let chosen_word = Word::new("*orro").unwrap();
         let mut result = WordsResult::new(chosen_word);
 
-        assert_eq!(result.is_word_possible(words[0], &excluded, &included), true);
-        assert_eq!(result.is_word_possible(words[1], &excluded, &included), true);
+        assert_eq!(
+            result.is_word_possible(words[0], &excluded, &included),
+            true
+        );
+        assert_eq!(
+            result.is_word_possible(words[1], &excluded, &included),
+            true
+        );
 
         assert_eq!(result.possible_words.len(), 2);
         assert_eq!(result.possible_words[0], Word::new("zorro").unwrap());
@@ -269,7 +291,10 @@ mod tests {
         let chosen_word = Word::new("zowie").unwrap();
         let mut result = WordsResult::new(chosen_word);
 
-        assert_eq!(result.is_word_possible(words[0], &excluded, &included), true);
+        assert_eq!(
+            result.is_word_possible(words[0], &excluded, &included),
+            true
+        );
         assert_eq!(result.possible_words.len(), 1);
         assert_eq!(result.possible_words[0], Word::new("zowie").unwrap());
     }
@@ -282,7 +307,10 @@ mod tests {
         let chosen_word = Word::new("z?*ie").unwrap();
         let mut result = WordsResult::new(chosen_word);
 
-        assert_eq!(result.is_word_possible(words[0], &excluded, &included), true);
+        assert_eq!(
+            result.is_word_possible(words[0], &excluded, &included),
+            true
+        );
         assert_eq!(result.possible_words.len(), 1);
         assert_eq!(result.possible_words[0], Word::new("zowie").unwrap());
     }
@@ -295,7 +323,10 @@ mod tests {
         let chosen_word = Word::new("*****").unwrap();
         let mut result = WordsResult::new(chosen_word);
 
-        assert_eq!(result.is_word_possible(words[0], &excluded, &included), true);
+        assert_eq!(
+            result.is_word_possible(words[0], &excluded, &included),
+            true
+        );
         assert_eq!(result.possible_words.len(), 1);
         assert_eq!(result.possible_words[0], Word::new("light").unwrap());
     }

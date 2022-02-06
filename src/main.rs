@@ -1,5 +1,5 @@
 use structopt::StructOpt;
-use words::{read_lines, Excluded, Word, WordsResult, Included};
+use words::{read_lines, Excluded, Included, Word, WordsResult};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let opt = Opt::from_args();
@@ -9,19 +9,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let excluded = match opt.excluded {
         Some(e) => e,
-        None => Excluded(vec![])
+        None => Excluded(vec![]),
     };
 
     let included = match opt.included {
         Some(i) => i,
-        None => Included(vec![])
+        None => Included(vec![]),
     };
 
     if let Ok(lines) = read_lines("src/words.txt") {
-        for line in lines {
-            if let Ok(word) = line {
-                result.is_word_possible(&word.as_str(), &excluded, &included);
-            };
+        for line in lines.flatten() {
+            result.is_word_possible(line.as_str(), &excluded, &included);
         }
     };
 
